@@ -11,7 +11,9 @@ from smtplib import SMTP
 load_dotenv()
 EMAIL_USER = os.getenv('EMAIL_USER')
 EMAIL_PASS = os.getenv('EMAIL_PASS')
-MONGO_URI = mongo_uri=f'mongodb+srv://{os.getenv('mongo_user')}:{os.getenv('mongo_pass')}@cluster0.vqfml.mongodb.net/'
+mongo_pass = os.getenv('mongo_pass')
+mongo_user = os.getenv('mongo_user')
+MONGO_URI = mongo_uri=f'mongodb+srv://{mongo_user}:{mongo_pass}@cluster0.vqfml.mongodb.net/'
 
 
 # Initialize Flask app
