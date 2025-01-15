@@ -5,4 +5,4 @@ pymongo[srv]==4.1.1
 Werkzeug==2.0.3
 pyjwt==2.4.0
 flask-limiter==2.1.0
-bleach==5.1.0
+bleach==6.2.0
