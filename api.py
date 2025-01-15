@@ -34,6 +34,8 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"]
 )
 
+limiter.init_app(app)
+
 # Function to sanitize inputs
 def sanitize_input(data):
     if not isinstance(data, str):
