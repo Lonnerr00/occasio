@@ -96,6 +96,7 @@ def resend_otp():
 
     try:
         # Find user in MongoDB
+        return jsonify({'User Data': user_collection}), 200
         user = user_collection.find_one({'email': email})
         if not user:
             return jsonify({'message': 'Email not found.'}), 404
