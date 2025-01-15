@@ -21,6 +21,13 @@ EMAIL_PASS = os.getenv('EMAIL_PASS')
 mongo_pass = os.getenv('mongo_pass')
 mongo_user = os.getenv('mongo_user')
 SECRET_KEY = os.getenv('SECRET_KEY')
+
+# Check for missing environment variables
+required_env_vars = ['EMAIL_USER', 'EMAIL_PASS', 'mongo_pass', 'mongo_user', 'SECRET_KEY']
+missing_vars = [var for var in required_env_vars if not locals().get(var)]
+if missing_vars:
+    raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
 MONGO_URI = f'mongodb+srv://{mongo_user}:{mongo_pass}@cluster0.vqfml.mongodb.net/'
 
 # Initialize Flask app
@@ -122,6 +129,7 @@ def signup():
 
         return jsonify({'message': 'Signup successful. OTP sent!'}), 201
     except Exception as e:
+        app.logger.error(f'Signup failed: {e}')
         return jsonify({'message': 'Signup failed.', 'error': str(e)}), 500
 
 @app.route('/resend-otp', methods=['POST'])
@@ -145,6 +153,7 @@ def resend_otp():
         sync_with_mongo()
         return jsonify({'message': 'OTP resent successfully.'}), 200
     except Exception as e:
+        app.logger.error(f'Failed to resend OTP: {e}')
         return jsonify({'message': 'Failed to resend OTP.', 'error': str(e)}), 500
 
 @app.route('/verify-otp', methods=['POST'])
