@@ -184,6 +184,39 @@ def get_users():
         app.logger.error(f'Error retrieving users: {e}')
         return jsonify({'message': 'Failed to retrieve users.', 'error': str(e)}), 500
 
+@app.route('/events', methods=['GET'])
+@authenticate_request
+def get_events():
+    email = request.headers.get('email')
+    try:
+        user = user_collection.find_one({'email': email})
+        if not user:
+            return jsonify({'message': 'User not found.'}), 404
+        events = user.get('events', [])
+        return jsonify({'events': events}), 200
+    except Exception as e:
+        app.logger.error(f'Error retrieving events: {e}')
+        return jsonify({'message': 'Failed to retrieve events.', 'error': str(e)}), 500
+
+@app.route('/update-events', methods=['POST'])
+@authenticate_request
+def update_events():
+    data = request.json
+    email = sanitize_input(data.get('email'))
+    events = data.get('events')
+
+    try:
+        user = user_collection.find_one({'email': email})
+        if not user:
+            return jsonify({'message': 'User not found.'}), 404
+
+        user_collection.update_one({'email': email}, {'$set': {'events': events}})
+        sync_with_mongo()
+        return jsonify({'message': 'Events updated successfully.'}), 200
+    except Exception as e:
+        app.logger.error(f'Error updating events: {e}')
+        return jsonify({'message': 'Failed to update events.', 'error': str(e)}), 500
+
 # Logger setup
 handler = RotatingFileHandler('api.log', maxBytes=10000, backupCount=1)
 handler.setLevel(logging.INFO)
