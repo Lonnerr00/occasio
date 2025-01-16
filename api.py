@@ -176,8 +176,6 @@ def verify_otp():
         return jsonify({'message': 'Failed to verify OTP.', 'error': str(e)}), 500
 
 @app.route('/get-users', methods=['GET'])
-@authenticate_request
-@limiter.limit("10 per minute")
 def get_users():
     try:
         users = list(user_collection.find({}, {"_id": 0}))
