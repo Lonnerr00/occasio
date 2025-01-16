@@ -13,6 +13,7 @@ from flask_limiter.util import get_remote_address
 from functools import wraps
 import logging
 from logging.handlers import RotatingFileHandler
+#from redis import Redis
 
 # Load environment variables
 load_dotenv()
@@ -34,9 +35,11 @@ MONGO_URI = f'mongodb+srv://{mongo_user}:{mongo_pass}@cluster0.vqfml.mongodb.net
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Rate Limiter setup
+# Rate Limiter setup with Redis
+#redis_client = Redis(host='localhost', port=6379)
 limiter = Limiter(
-    get_remote_address,
+    key_func=get_remote_address,
+    #storage_uri="redis://localhost:6379",
     app=app,
     default_limits=["200 per day", "50 per hour"]
 )
@@ -190,5 +193,4 @@ app.logger.addHandler(handler)
 
 if __name__ == '__main__':
     sync_with_mongo()
-    context = ('server.crt', 'server.key')
-    app.run(host='0.0.0.0', port=5000, debug=True, ssl_context=context)
+    app.run(host='0.0.0.0', port=5000)
