@@ -185,7 +185,6 @@ def get_users():
         return jsonify({'message': 'Failed to retrieve users.', 'error': str(e)}), 500
 
 @app.route('/events', methods=['GET'])
-@authenticate_request
 def get_events():
     email = request.headers.get('email')
     try:
@@ -199,7 +198,6 @@ def get_events():
         return jsonify({'message': 'Failed to retrieve events.', 'error': str(e)}), 500
 
 @app.route('/update-events', methods=['POST'])
-@authenticate_request
 def update_events():
     data = request.json
     email = sanitize_input(data.get('email'))
