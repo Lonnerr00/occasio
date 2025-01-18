@@ -117,6 +117,9 @@ def home():
 # Signup API
 @app.route('/signup', methods=['POST'])
 def signup():
+    if not request.is_json:
+        return jsonify({'message': 'Request must be JSON'}), 400
+
     data = request.json
     email = sanitize_input(data.get('email'))
     name = sanitize_input(data.get('name'))
@@ -153,6 +156,9 @@ def signup():
 # Login API
 @app.route('/login', methods=['POST'])
 def login():
+    if not request.is_json:
+        return jsonify({'message': 'Request must be JSON'}), 400
+
     data = request.json
     email = sanitize_input(data.get('email'))
     password = sanitize_input(data.get('password'))
@@ -178,6 +184,9 @@ def login():
 # Resend OTP API
 @app.route('/resend-otp', methods=['POST'])
 def resend_otp():
+    if not request.is_json:
+        return jsonify({'message': 'Request must be JSON'}), 400
+
     data = request.json
     email = sanitize_input(data.get('email'))
     otp = generate_otp()
@@ -203,6 +212,9 @@ def resend_otp():
 # Verify OTP API
 @app.route('/verify-otp', methods=['POST'])
 def verify_otp():
+    if not request.is_json:
+        return jsonify({'message': 'Request must be JSON'}), 400
+
     data = request.json
     email = sanitize_input(data.get('email'))
     otp = data.get('otp')
