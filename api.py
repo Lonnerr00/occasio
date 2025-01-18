@@ -13,7 +13,8 @@ from flask_limiter.util import get_remote_address
 from functools import wraps
 import logging
 from logging.handlers import RotatingFileHandler
-#from redis import Redis
+import datetime
+# from redis import Redis
 
 # Load environment variables
 load_dotenv()
@@ -23,12 +24,7 @@ mongo_pass = os.getenv('mongo_pass')
 mongo_user = os.getenv('mongo_user')
 SECRET_KEY = os.getenv('SECRET_KEY')
 
-# Check for missing environment variables
-# required_env_vars = ['EMAIL_USER', 'EMAIL_PASS', 'mongo_pass', 'mongo_user', 'SECRET_KEY']
-# missing_vars = [var for var in required_env_vars if not locals().get(var)]
-# if missing_vars:
-#     raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
-
+# MongoDB URI
 MONGO_URI = f'mongodb+srv://{mongo_user}:{mongo_pass}@cluster0.vqfml.mongodb.net/'
 
 # Initialize Flask app
@@ -36,10 +32,10 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Rate Limiter setup with Redis
-#redis_client = Redis(host='localhost', port=6379)
+# redis_client = Redis(host='localhost', port=6379)
 limiter = Limiter(
     key_func=get_remote_address,
-    #storage_uri="redis://localhost:6379",
+    # storage_uri="redis://localhost:6379",
     app=app,
     default_limits=["200 per day", "50 per hour"]
 )
@@ -105,10 +101,20 @@ def sync_with_mongo():
 def generate_otp():
     return str(random.randint(100000, 999999))
 
+# Generate JWT token
+def generate_token(email):
+    payload = {
+        'email': email,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)  # Token expires in 1 day
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+
+# Home route
 @app.route('/')
 def home():
     return 'Welcome to the Flask API!'
 
+# Signup API
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.json
@@ -124,17 +130,52 @@ def signup():
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.sendmail(EMAIL_USER, email, f"Subject: Signup OTP\n\nYour OTP is {otp}")
         # Store user details and OTP in MongoDB
-        user = {'email': email, 'name': name, 'password': password, 'otp': otp}
+        user = {
+            'email': email,
+            'name': name,
+            'password': password,
+            'otp': otp,
+            'events': [],
+            'mobile': '',
+            'loggedIn': False
+        }
         user_collection.replace_one({'email': email}, user, upsert=True)
 
         # Sync with local JSON
         sync_with_mongo()
 
-        return jsonify({'message': 'Signup successful. OTP sent!'}), 201
+        token = generate_token(email)
+        return jsonify({'message': 'Signup successful. OTP sent!', 'token': token, 'userData': user}), 201
     except Exception as e:
         app.logger.error(f'Signup failed: {e}')
         return jsonify({'message': 'Signup failed.', 'error': str(e)}), 500
 
+# Login API
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    email = sanitize_input(data.get('email'))
+    password = sanitize_input(data.get('password'))
+
+    try:
+        user = user_collection.find_one({'email': email})
+        if not user or user['password'] != password:
+            return jsonify({'message': 'Invalid email or password.'}), 401
+
+        token = generate_token(email)
+        return jsonify({
+            'message': 'Login successful.',
+            'token': token,
+            'name': user['name'],
+            'email': user['email'],
+            'password': user['password'],
+            'mobile': user.get('mobile', '')
+        }), 200
+    except Exception as e:
+        app.logger.error(f'Login failed: {e}')
+        return jsonify({'message': 'Login failed.', 'error': str(e)}), 500
+
+# Resend OTP API
 @app.route('/resend-otp', methods=['POST'])
 def resend_otp():
     data = request.json
@@ -159,6 +200,7 @@ def resend_otp():
         app.logger.error(f'Failed to resend OTP: {e}')
         return jsonify({'message': 'Failed to resend OTP.', 'error': str(e)}), 500
 
+# Verify OTP API
 @app.route('/verify-otp', methods=['POST'])
 def verify_otp():
     data = request.json
@@ -175,6 +217,7 @@ def verify_otp():
     except Exception as e:
         return jsonify({'message': 'Failed to verify OTP.', 'error': str(e)}), 500
 
+# Get Users API
 @app.route('/get-users', methods=['GET'])
 def get_users():
     try:
@@ -184,6 +227,7 @@ def get_users():
         app.logger.error(f'Error retrieving users: {e}')
         return jsonify({'message': 'Failed to retrieve users.', 'error': str(e)}), 500
 
+# Get Events API
 @app.route('/events', methods=['GET'])
 @authenticate_request
 def get_events():
@@ -198,6 +242,7 @@ def get_events():
         app.logger.error(f'Error retrieving events: {e}')
         return jsonify({'message': 'Failed to retrieve events.', 'error': str(e)}), 500
 
+# Update Events API
 @app.route('/update-events', methods=['POST'])
 @authenticate_request
 def update_events():
