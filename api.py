@@ -13,7 +13,7 @@ from flask_limiter.util import get_remote_address
 from functools import wraps
 import logging
 from logging.handlers import RotatingFileHandler
-import datetime
+import datetime, timedelta
 # from redis import Redis
 
 # Load environment variables
@@ -56,6 +56,7 @@ def authenticate_request(func):
         if not token:
             return jsonify({'message': 'Missing token'}), 401
         try:
+            token = token.split("Bearer ")[1]
             jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
         except jwt.ExpiredSignatureError:
             return jsonify({'message': 'Token has expired'}), 401
@@ -105,25 +106,24 @@ def generate_otp():
 def generate_token(email):
     payload = {
         'email': email,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)  # Token expires in 1 day
+        'exp': datetime.utcnow() + timedelta(hours=1)  # Token expires in 1 hour
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    return token
 
 # Home route
 @app.route('/')
 def home():
     return 'Welcome to the Flask API!'
 
-# Signup API
-@app.route('/signup', methods=['POST'])
-def signup():
+# Send OTP API
+@app.route('/send-otp', methods=['POST'])
+def send_otp():
     if not request.is_json:
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
     email = sanitize_input(data.get('email'))
-    name = sanitize_input(data.get('name'))
-    password = sanitize_input(data.get('password'))
     otp = generate_otp()
 
     try:
@@ -132,26 +132,13 @@ def signup():
             smtp.starttls()
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.sendmail(EMAIL_USER, email, f"Subject: Signup OTP\n\nYour OTP is {otp}")
-        # Store user details and OTP in MongoDB
-        user = {
-            'email': email,
-            'name': name,
-            'password': password,
-            'otp': otp,
-            'events': [],
-            'mobile': '',
-            'loggedIn': False
-        }
-        user_collection.replace_one({'email': email}, user, upsert=True)
 
-        # Sync with local JSON
-        sync_with_mongo()
-
-        token = generate_token(email)
-        return jsonify({'message': 'Signup successful. OTP sent!', 'token': token, 'userData': user}), 201
+        # Store OTP temporarily
+        user_collection.update_one({'email': email}, {'$set': {'otp': otp}}, upsert=True)
+        return jsonify({'message': 'OTP sent successfully!'}), 200
     except Exception as e:
-        app.logger.error(f'Signup failed: {e}')
-        return jsonify({'message': 'Signup failed.', 'error': str(e)}), 500
+        app.logger.error(f'Failed to send OTP: {e}')
+        return jsonify({'message': 'Failed to send OTP.', 'error': str(e)}), 500
 
 # Login API
 @app.route('/login', methods=['POST'])
@@ -159,6 +146,7 @@ def login():
     if not request.is_json:
         return jsonify({'message': 'Request must be JSON'}), 400
 
+    print(request);
     data = request.json
     email = sanitize_input(data.get('email'))
     password = sanitize_input(data.get('password'))
@@ -168,7 +156,7 @@ def login():
         if not user or user['password'] != password:
             return jsonify({'message': 'Invalid email or password.'}), 401
 
-        token = generate_token(email)
+        token = generate_token(user['email'])
         return jsonify({
             'message': 'Login successful.',
             'token': token,
@@ -218,13 +206,33 @@ def verify_otp():
     data = request.json
     email = sanitize_input(data.get('email'))
     otp = data.get('otp')
+    name = sanitize_input(data.get('name'))
+    password = sanitize_input(data.get('password'))
+    mobile = sanitize_input(data.get('mobile'))
+    events = data.get('events', [])
+    settings = data.get('settings', {})
+    signupDate = data.get('signupDate')
 
     try:
         user = user_collection.find_one({'email': email})
         if not user:
             return jsonify({'message': 'Email not found.'}), 404
         if user['otp'] == otp:
-            return jsonify({'message': 'OTP verified successfully.'}), 200
+            # Add user data to the database
+            user_data = {
+                'email': email,
+                'name': name,
+                'password': password,
+                'events': events,
+                'mobile': mobile,
+                'settings': settings,
+                'signupDate': signupDate,
+                'loggedIn': True
+            }
+            user_collection.replace_one({'email': email}, user_data, upsert=True)
+            sync_with_mongo()
+            token = generate_token(email)
+            return jsonify({'message': 'OTP verified successfully.', 'token': token, 'userData': user_data}), 200
         return jsonify({'message': 'Invalid OTP.'}), 400
     except Exception as e:
         return jsonify({'message': 'Failed to verify OTP.', 'error': str(e)}), 500
@@ -244,6 +252,8 @@ def get_users():
 @authenticate_request
 def get_events():
     email = request.headers.get('email')
+    if not email:  # Check if email is provided in the headers
+        return jsonify({'message': 'Missing email in request headers.'}), 400
     try:
         user = user_collection.find_one({'email': email})
         if not user:
@@ -273,6 +283,21 @@ def update_events():
     except Exception as e:
         app.logger.error(f'Error updating events: {e}')
         return jsonify({'message': 'Failed to update events.', 'error': str(e)}), 500
+
+# Refresh Token API
+@app.route('/refresh-token', methods=['POST'])
+@authenticate_request
+def refresh_token():
+    token = request.headers.get('Authorization').split("Bearer ")[1]
+    try:
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        email = decoded['email']
+        new_token = generate_token(email)
+        return jsonify({'token': new_token}), 200
+    except jwt.ExpiredSignatureError:
+        return jsonify({'message': 'Token has expired'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'message': 'Invalid token'}), 401
 
 # Logger setup
 handler = RotatingFileHandler('api.log', maxBytes=10000, backupCount=1)
