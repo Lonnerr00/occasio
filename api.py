@@ -13,7 +13,7 @@ from flask_limiter.util import get_remote_address
 from functools import wraps
 import logging
 from logging.handlers import RotatingFileHandler
-import datetime, timedelta
+from datetime import datetime, timedelta
 # from redis import Redis
 
 # Load environment variables
