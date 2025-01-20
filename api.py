@@ -284,6 +284,28 @@ def update_events():
         app.logger.error(f'Error updating events: {e}')
         return jsonify({'message': 'Failed to update events.', 'error': str(e)}), 500
 
+# Update User API
+@app.route('/update-user', methods=['POST'])
+@authenticate_request
+def update_user():
+    if not request.is_json:
+        return jsonify({'message': 'Request must be JSON'}), 400
+
+    data = request.json
+    email = sanitize_input(data.get('email'))
+
+    try:
+        user = user_collection.find_one({'email': email})
+        if not user:
+            return jsonify({'message': 'User not found.'}), 404
+
+        user_collection.update_one({'email': email}, {'$set': data})
+        sync_with_mongo()
+        return jsonify({'message': 'User updated successfully.'}), 200
+    except Exception as e:
+        app.logger.error(f'Error updating user: {e}')
+        return jsonify({'message': 'Failed to update user.', 'error': str(e)}), 500
+
 # Refresh Token API
 @app.route('/refresh-token', methods=['POST'])
 @authenticate_request
