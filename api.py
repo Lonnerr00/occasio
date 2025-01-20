@@ -370,6 +370,28 @@ def get_events():
         app.logger.error(f'Error retrieving events: {e}')
         return jsonify({'message': 'Failed to retrieve events.', 'error': str(e)}), 500
 
+# Reset Password API
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    if not request.is_json:
+        return jsonify({'message': 'Request must be JSON'}), 400
+
+    data = request.json
+    email = sanitize_input(data.get('email'))
+    new_password = sanitize_input(data.get('newPassword'))
+
+    try:
+        user = user_collection.find_one({'email': email})
+        if not user:
+            return jsonify({'message': 'Email not found.'}), 404
+
+        user_collection.update_one({'email': email}, {'$set': {'password': new_password}})
+        sync_with_mongo()
+        return jsonify({'message': 'Password reset successful.'}), 200
+    except Exception as e:
+        app.logger.error(f'Failed to reset password: {e}')
+        return jsonify({'message': 'Failed to reset password.', 'error': str(e)}), 500
+
 # Logger setup
 handler = RotatingFileHandler('api.log', maxBytes=10000, backupCount=1)
 handler.setLevel(logging.INFO)
