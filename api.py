@@ -247,43 +247,6 @@ def get_users():
         app.logger.error(f'Error retrieving users: {e}')
         return jsonify({'message': 'Failed to retrieve users.', 'error': str(e)}), 500
 
-# Get Events API
-@app.route('/events', methods=['GET'])
-@authenticate_request
-def get_events():
-    email = request.headers.get('email')
-    if not email:  # Check if email is provided in the headers
-        return jsonify({'message': 'Missing email in request headers.'}), 400
-    try:
-        user = user_collection.find_one({'email': email})
-        if not user:
-            return jsonify({'message': 'User not found.'}), 404
-        events = user.get('events', [])
-        return jsonify({'events': events}), 200
-    except Exception as e:
-        app.logger.error(f'Error retrieving events: {e}')
-        return jsonify({'message': 'Failed to retrieve events.', 'error': str(e)}), 500
-
-# Update Events API
-@app.route('/update-events', methods=['POST'])
-@authenticate_request
-def update_events():
-    data = request.json
-    email = sanitize_input(data.get('email'))
-    events = data.get('events')
-
-    try:
-        user = user_collection.find_one({'email': email})
-        if not user:
-            return jsonify({'message': 'User not found.'}), 404
-
-        user_collection.update_one({'email': email}, {'$set': {'events': events}})
-        sync_with_mongo()
-        return jsonify({'message': 'Events updated successfully.'}), 200
-    except Exception as e:
-        app.logger.error(f'Error updating events: {e}')
-        return jsonify({'message': 'Failed to update events.', 'error': str(e)}), 500
-
 # Update User API
 @app.route('/update-user', methods=['POST'])
 @authenticate_request
@@ -320,6 +283,92 @@ def refresh_token():
         return jsonify({'message': 'Token has expired'}), 401
     except jwt.InvalidTokenError:
         return jsonify({'message': 'Invalid token'}), 401
+    
+
+# Notifications Changes
+
+def get_todays_events():
+    """Retrieve events happening today for all users."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    events_today = []
+
+    users = user_collection.find()
+    for user in users:
+        if not user.get('settings', {}).get('notifications', False):
+            continue  # Skip if notifications are disabled for the user
+        
+        # Iterate over events
+        for event in user.get('events', []):
+            if event['date'][:10] == today:  # Check if the event is today
+                events_today.append({
+                    'email': user['email'],
+                    'name': event['name'],
+                    'type': event['type']
+                })
+    return events_today
+
+def get_upcoming_events():
+    """Retrieve upcoming events based on user settings."""
+    now = datetime.now()
+    upcoming_events = []
+
+    users = user_collection.find()
+    for user in users:
+        settings = user.get('settings', {})
+        reminder_settings = settings.get('reminder', {})
+        frequency = reminder_settings.get('frequency', 'Monthly')  # Default to Monthly
+        range_type = reminder_settings.get('range', 'Month')  # Default to Month
+
+        days_range = {
+            'Week': 7,
+            'Month': 30,
+            'Year': 365
+        }.get(range_type, 30)  # Default range to 30 days
+
+        if not settings.get('notifications', False):
+            continue  # Skip if notifications are disabled for the user
+
+        for event in user.get('events', []):
+            event_date = datetime.strptime(event['date'], '%Y-%m-%dT%H:%M:%S.%fZ')
+            if (event_date - now).days <= days_range:  # Check if within range
+                upcoming_events.append({
+                    'email': user['email'],
+                    'name': event['name'],
+                    'date': event['date'],
+                    'type': event['type']
+                })
+    return upcoming_events
+
+@app.before_first_request
+def daily_event_check():
+    """Scheduled task to check for today's and upcoming events."""
+    today_events = get_todays_events()
+    upcoming_events = get_upcoming_events()
+
+    send_push_notifications(today_events, 'Today')
+    send_push_notifications(upcoming_events, 'Upcoming')
+
+def send_push_notifications(events, notification_type):
+    """Send notifications to users about events."""
+    for event in events:
+        print(f"Sending {notification_type} notification to {event['email']} for {event['name']}.")
+
+# Get Events API
+@app.route('/get-events', methods=['GET'])
+def get_events():
+    email = request.args.get('email')
+    if not email:
+        return jsonify({'message': 'Email is required'}), 400
+
+    try:
+        user = user_collection.find_one({'email': email}, {'_id': 0, 'events': 1})
+        if not user:
+            return jsonify({'message': 'User not found'}), 404
+
+        return jsonify({'events': user.get('events', [])}), 200
+    except Exception as e:
+        app.logger.error(f'Error retrieving events: {e}')
+        return jsonify({'message': 'Failed to retrieve events.', 'error': str(e)}), 500
 
 # Logger setup
 handler = RotatingFileHandler('api.log', maxBytes=10000, backupCount=1)
