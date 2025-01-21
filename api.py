@@ -99,8 +99,11 @@ def sync_with_mongo():
     users = list(user_collection.find({}, {"_id": 0}))
     save_data({user['email']: user for user in users})
 
+# Function to generate OTP with expiry
 def generate_otp():
-    return str(random.randint(100000, 999999))
+    otp = str(random.randint(100000, 999999))
+    expiry_time = datetime.utcnow() + timedelta(minutes=5)  # OTP expires in 5 minutes
+    return otp, expiry_time
 
 # Generate JWT token
 def generate_token(email):
@@ -124,7 +127,7 @@ def send_otp():
 
     data = request.json
     email = sanitize_input(data.get('email'))
-    otp = generate_otp()
+    otp, expiry_time = generate_otp()
 
     try:
         # Send OTP via email
@@ -133,9 +136,9 @@ def send_otp():
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.sendmail(EMAIL_USER, email, f"Subject: Signup OTP\n\nYour OTP is {otp}")
 
-        # Store OTP temporarily
-        user_collection.update_one({'email': email}, {'$set': {'otp': otp}}, upsert=True)
-        return jsonify({'message': 'OTP sent successfully!'}), 200
+        # Store OTP and expiry time in the database
+        user_collection.update_one({'email': email}, {'$set': {'otp': otp, 'otp_expiry': expiry_time}}, upsert=True)
+        return jsonify({'message': 'OTP sent successfully!', 'otp': otp}), 200
     except Exception as e:
         app.logger.error(f'Failed to send OTP: {e}')
         return jsonify({'message': 'Failed to send OTP.', 'error': str(e)}), 500
@@ -146,7 +149,6 @@ def login():
     if not request.is_json:
         return jsonify({'message': 'Request must be JSON'}), 400
 
-    print(request);
     data = request.json
     email = sanitize_input(data.get('email'))
     password = sanitize_input(data.get('password'))
@@ -157,10 +159,20 @@ def login():
             return jsonify({'message': 'Invalid email or password.'}), 401
 
         token = generate_token(user['email'])
+        user['_id'] = str(user['_id'])
         return jsonify({
             'message': 'Login successful.',
             'token': token,
-            'userData': user
+            'userData': {
+                'email': user['email'],
+                'name': user['name'],
+                'events': user['events'],
+                'mobile': user['mobile'],
+                'settings': user['settings'],
+                'signupDate': user['signupDate'],
+                'password': user['password'],
+                'signupDate': user['signupDate']
+            }
         }), 200
     except Exception as e:
         app.logger.error(f'Login failed: {e}')
@@ -187,9 +199,8 @@ def resend_otp():
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.sendmail(EMAIL_USER, email, f"Subject: Resend OTP\n\nYour OTP is {otp}")
 
-        user_collection.update_one({'email': email}, {'$set': {'otp': otp}})
-        sync_with_mongo()
-        return jsonify({'message': 'OTP resent successfully.'}), 200
+        # No longer storing OTP in the database
+        return jsonify({'message': 'OTP resent successfully.', 'otp': otp}), 200
     except Exception as e:
         app.logger.error(f'Failed to resend OTP: {e}')
         return jsonify({'message': 'Failed to resend OTP.', 'error': str(e)}), 500
@@ -203,34 +214,28 @@ def verify_otp():
     data = request.json
     email = sanitize_input(data.get('email'))
     otp = data.get('otp')
-    name = sanitize_input(data.get('name'))
-    password = sanitize_input(data.get('password'))
-    mobile = sanitize_input(data.get('mobile'))
-    events = data.get('events', [])
-    settings = data.get('settings', {})
-    signupDate = data.get('signupDate')
 
     try:
         user = user_collection.find_one({'email': email})
         if not user:
             return jsonify({'message': 'Email not found.'}), 404
-        if user['otp'] == otp:
+        if user['otp'] == otp and datetime.utcnow() < user['otp_expiry']:  # Check OTP and expiry
             # Add user data to the database
             user_data = {
                 'email': email,
-                'name': name,
-                'password': password,
-                'events': events,
-                'mobile': mobile,
-                'settings': settings,
-                'signupDate': signupDate,
+                'name': user['name'],
+                'password': user['password'],
+                'events': user['events'],
+                'mobile': user['mobile'],
+                'settings': user['settings'],
+                'signupDate': user['signupDate'],
                 'loggedIn': True
             }
             user_collection.replace_one({'email': email}, user_data, upsert=True)
             sync_with_mongo()
             token = generate_token(email)
             return jsonify({'message': 'OTP verified successfully.', 'token': token, 'userData': user_data}), 200
-        return jsonify({'message': 'Invalid OTP.'}), 400
+        return jsonify({'message': 'Invalid or expired OTP.'}), 400
     except Exception as e:
         return jsonify({'message': 'Failed to verify OTP.', 'error': str(e)}), 500
 
@@ -259,7 +264,16 @@ def update_user():
         if not user:
             return jsonify({'message': 'User not found.'}), 404
 
-        user_collection.update_one({'email': email}, {'$set': data})
+        updated_user_data = {
+            'email': data.get('email'),
+            'name': data.get('name'),
+            'events': data.get('events'),
+            'mobile': data.get('mobile'),
+            'settings': data.get('settings'),
+            'signupDate': data.get('signupDate'),
+            'password': data.get('password')
+        }
+        user_collection.update_one({'email': email}, {'$set': updated_user_data})
         sync_with_mongo()
         return jsonify({'message': 'User updated successfully.'}), 200
     except Exception as e:
