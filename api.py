@@ -168,7 +168,7 @@ def login():
                 'name': user['name'],
                 'events': user['events'],
                 'mobile': user['mobile'],
-                'settings': user['settings'],
+                'settings': user.get('settings', {}),
                 'signupDate': user['signupDate'],
                 'password': user['password'],
                 'signupDate': user['signupDate']
@@ -227,7 +227,7 @@ def verify_otp():
                 'password': user['password'],
                 'events': user['events'],
                 'mobile': user['mobile'],
-                'settings': user['settings'],
+                'settings': user.get('settings', {}),
                 'signupDate': user['signupDate'],
                 'loggedIn': True
             }
@@ -269,7 +269,7 @@ def update_user():
             'name': data.get('name'),
             'events': data.get('events'),
             'mobile': data.get('mobile'),
-            'settings': data.get('settings'),
+            'settings': data.get('settings', {}),
             'signupDate': data.get('signupDate'),
             'password': data.get('password')
         }
