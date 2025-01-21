@@ -205,39 +205,40 @@ def resend_otp():
         app.logger.error(f'Failed to resend OTP: {e}')
         return jsonify({'message': 'Failed to resend OTP.', 'error': str(e)}), 500
 
-# Verify OTP API
-@app.route('/verify-otp', methods=['POST'])
-def verify_otp():
+# Signup API
+@app.route('/signup', methods=['POST'])
+def signup():
     if not request.is_json:
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
     email = sanitize_input(data.get('email'))
-    otp = data.get('otp')
+    name = sanitize_input(data.get('name'))
+    password = sanitize_input(data.get('password'))
+    settings = sanitize_input(data.get('settings', {}))
 
     try:
-        user = user_collection.find_one({'email': email})
-        if not user:
-            return jsonify({'message': 'Email not found.'}), 404
-        if user['otp'] == otp and datetime.utcnow() < user['otp_expiry']:  # Check OTP and expiry
-            # Add user data to the database
-            user_data = {
-                'email': email,
-                'name': user['name'],
-                'password': user['password'],
-                'events': user['events'],
-                'mobile': user['mobile'],
-                'settings': user.get('settings', {}),
-                'signupDate': user['signupDate'],
-                'loggedIn': True
-            }
-            user_collection.replace_one({'email': email}, user_data, upsert=True)
-            sync_with_mongo()
-            token = generate_token(email)
-            return jsonify({'message': 'OTP verified successfully.', 'token': token, 'userData': user_data}), 200
-        return jsonify({'message': 'Invalid or expired OTP.'}), 400
+        if user_collection.find_one({'email': email}):
+            return jsonify({'message': 'Email already exists.'}), 400
+        
+        user_data = {
+            'email': email,
+            'name': name,
+            'password': password,
+            'events': [],
+            'mobile': '',
+            'settings': settings,
+            'signupDate': datetime.utcnow(),
+            'loggedIn': True
+        }
+        user_collection.insert_one(user_data)
+
+        return jsonify({'message': 'Signup successful!'}), 200
     except Exception as e:
-        return jsonify({'message': 'Failed to verify OTP.', 'error': str(e)}), 500
+        app.logger.error(f'Signup failed: {e}')
+        return jsonify({'message': 'Signup failed.', 'error': str(e)}), 500
+
+
 
 # Get Users API
 @app.route('/get-users', methods=['GET'])
@@ -258,24 +259,25 @@ def update_user():
 
     data = request.json
     email = sanitize_input(data.get('email'))
+    updated_user_data = {
+        'email': data.get('email'),
+        'name': data.get('name'),
+        'events': data.get('events'),
+        'mobile': data.get('mobile'),
+        'settings': data.get('settings', {}),
+        'signupDate': data.get('signupDate'),
+        'password': data.get('password')
+    }
 
     try:
         user = user_collection.find_one({'email': email})
         if not user:
-            return jsonify({'message': 'User not found.'}), 404
-
-        updated_user_data = {
-            'email': data.get('email'),
-            'name': data.get('name'),
-            'events': data.get('events'),
-            'mobile': data.get('mobile'),
-            'settings': data.get('settings', {}),
-            'signupDate': data.get('signupDate'),
-            'password': data.get('password')
-        }
-        user_collection.update_one({'email': email}, {'$set': updated_user_data})
-        sync_with_mongo()
-        return jsonify({'message': 'User updated successfully.'}), 200
+            user_collection.insert_one(updated_user_data)
+            return jsonify({'message': 'User not found, So added as new user!'}), 200
+        else:
+            user_collection.update_one({'email': email}, {'$set': updated_user_data})
+            sync_with_mongo()
+            return jsonify({'message': 'User updated successfully.'}), 200
     except Exception as e:
         app.logger.error(f'Error updating user: {e}')
         return jsonify({'message': 'Failed to update user.', 'error': str(e)}), 500
