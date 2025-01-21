@@ -160,10 +160,7 @@ def login():
         return jsonify({
             'message': 'Login successful.',
             'token': token,
-            'name': user['name'],
-            'email': user['email'],
-            'password': user['password'],
-            'mobile': user.get('mobile', '')
+            'userData': user
         }), 200
     except Exception as e:
         app.logger.error(f'Login failed: {e}')
