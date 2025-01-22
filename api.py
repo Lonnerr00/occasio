@@ -91,8 +91,13 @@ def load_data():
     return {}
 
 def save_data(data):
-    with open(DATA_FILE, 'w') as file:
-        json.dump(data, file, indent=4)
+    def default_converter(o):
+        if isinstance(o, datetime):
+            return o.isoformat()
+        raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
+
+    with open('data.json', 'w') as file:
+        json.dump(data, file, indent=4, default=default_converter)
 
 def sync_with_mongo():
     """Synchronize local JSON with MongoDB."""
