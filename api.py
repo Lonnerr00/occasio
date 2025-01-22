@@ -171,7 +171,7 @@ def login():
                 'settings': user.get('settings', {}),
                 'signupDate': user['signupDate'],
                 'password': user['password'],
-                'signupDate': user['signupDate']
+                'signupDate': str(user['signupDate'])
             }
         }), 200
     except Exception as e:
