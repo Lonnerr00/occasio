@@ -96,8 +96,8 @@ def save_data(data):
 
 def sync_with_mongo():
     """Synchronize local JSON with MongoDB."""
+    users = list(user_collection.find({}, {"_id": 0}))
     if users:
-        users = list(user_collection.find({}, {"_id": 0}))
         save_data({user['email']: user for user in users})
 
 # Function to generate OTP with expiry
