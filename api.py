@@ -128,6 +128,7 @@ def send_otp():
     data = request.json
     email = sanitize_input(data.get('email'))
     otp, expiry_time = generate_otp()
+    token = generate_token(email)
 
     try:
         # Send OTP via email
@@ -136,9 +137,7 @@ def send_otp():
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.sendmail(EMAIL_USER, email, f"Subject: Signup OTP\n\nYour OTP is {otp}")
 
-        # Store OTP and expiry time in the database
-        user_collection.update_one({'email': email}, {'$set': {'otp': otp, 'otp_expiry': expiry_time}}, upsert=True)
-        return jsonify({'message': 'OTP sent successfully!', 'otp': otp}), 200
+        return jsonify({'message': 'OTP sent successfully!', 'otp': otp, 'token': token}), 200
     except Exception as e:
         app.logger.error(f'Failed to send OTP: {e}')
         return jsonify({'message': 'Failed to send OTP.', 'error': str(e)}), 500
