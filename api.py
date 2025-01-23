@@ -3,17 +3,16 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from pymongo import MongoClient, server_api
 import os
-import random
 import json
 from smtplib import SMTP
 import jwt
-import bleach
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
 import logging
 from logging.handlers import RotatingFileHandler
-from datetime import datetime, timedelta
+from datetime import datetime
+import helper
 # from redis import Redis
 
 # Load environment variables
@@ -41,12 +40,6 @@ limiter = Limiter(
 )
 
 limiter.init_app(app)
-
-# Function to sanitize inputs
-def sanitize_input(data):
-    if not isinstance(data, str):
-        return data
-    return bleach.clean(data)
 
 # Authentication decorator
 def authenticate_request(func):
@@ -105,21 +98,6 @@ def sync_with_mongo():
     if users:
         save_data({user['email']: user for user in users})
 
-# Function to generate OTP with expiry
-def generate_otp():
-    otp = str(random.randint(100000, 999999))
-    expiry_time = datetime.utcnow() + timedelta(minutes=5)  # OTP expires in 5 minutes
-    return otp, expiry_time
-
-# Generate JWT token
-def generate_token(email):
-    payload = {
-        'email': email,
-        'exp': datetime.utcnow() + timedelta(hours=1)  # Token expires in 1 hour
-    }
-    token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
-    return token
-
 # Home route
 @app.route('/')
 def home():
@@ -132,16 +110,25 @@ def send_otp():
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
-    email = sanitize_input(data.get('email'))
-    otp, expiry_time = generate_otp()
-    token = generate_token(email)
+    email = helper.sanitize_input(data.get('email'))
+    otp, expiry_time = helper.generate_otp()
+    token = helper.generate_token(email)
+    request_type = data['type']
+    body = ''
+
+    if request_type == 'signup':
+        body = helper.generate_signup_body(email, otp)
+    elif request_type == 'reset':
+        body = helper.generate_reset_body(email, otp)
+    else:
+        return jsonify({'message': 'Invalid request type'}), 400
 
     try:
         # Send OTP via email
         with SMTP(EMAIL_HOST, EMAIL_PORT) as smtp:
             smtp.starttls()
             smtp.login(EMAIL_USER, EMAIL_PASS)
-            smtp.sendmail(EMAIL_USER, email, f"Subject: Signup OTP\n\nYour OTP is {otp}")
+            smtp.sendmail(EMAIL_USER, email, body)
 
         return jsonify({'message': 'OTP sent successfully!', 'otp': otp, 'token': token}), 200
     except Exception as e:
@@ -155,15 +142,15 @@ def login():
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
-    email = sanitize_input(data.get('email'))
-    password = sanitize_input(data.get('password'))
+    email = helper.sanitize_input(data.get('email'))
+    password = helper.sanitize_input(data.get('password'))
 
     try:
         user = user_collection.find_one({'email': email})
         if not user or user['password'] != password:
             return jsonify({'message': 'Invalid email or password.'}), 401
 
-        token = generate_token(user['email'])
+        token = helper.generate_token(user['email'])
         user['_id'] = str(user['_id'])
         return jsonify({
             'message': 'Login successful.',
@@ -190,8 +177,8 @@ def resend_otp():
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
-    email = sanitize_input(data.get('email'))
-    otp = generate_otp()
+    email = helper.sanitize_input(data.get('email'))
+    otp = helper.generate_otp()
 
     try:
         user = user_collection.find_one({'email': email})
@@ -217,10 +204,10 @@ def signup():
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
-    email = sanitize_input(data.get('email'))
-    name = sanitize_input(data.get('name'))
-    password = sanitize_input(data.get('password'))
-    settings = sanitize_input(data.get('settings', {}))
+    email = helper.sanitize_input(data.get('email'))
+    name = helper.sanitize_input(data.get('name'))
+    password = helper.sanitize_input(data.get('password'))
+    settings = helper.sanitize_input(data.get('settings', {}))
 
     try:
         if user_collection.find_one({'email': email}):
@@ -263,7 +250,7 @@ def update_user():
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
-    email = sanitize_input(data.get('email'))
+    email = helper.sanitize_input(data.get('email'))
     updated_user_data = {
         'email': data.get('email'),
         'name': data.get('name'),
@@ -295,7 +282,7 @@ def refresh_token():
     try:
         decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
         email = decoded['email']
-        new_token = generate_token(email)
+        new_token = helper.generate_token(email)
         return jsonify({'token': new_token}), 200
     except jwt.ExpiredSignatureError:
         return jsonify({'message': 'Token has expired'}), 401
@@ -395,8 +382,8 @@ def reset_password():
         return jsonify({'message': 'Request must be JSON'}), 400
 
     data = request.json
-    email = sanitize_input(data.get('email'))
-    new_password = sanitize_input(data.get('newPassword'))
+    email = helper.sanitize_input(data.get('email'))
+    new_password = helper.sanitize_input(data.get('newPassword'))
 
     try:
         user = user_collection.find_one({'email': email})
