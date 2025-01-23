@@ -113,7 +113,7 @@ def send_otp():
     email = helper.sanitize_input(data.get('email'))
     otp, expiry_time = helper.generate_otp()
     token = helper.generate_token(email)
-    request_type = data['type']
+    request_type = data.get('type')
     body = ''
 
     if request_type == 'signup':
